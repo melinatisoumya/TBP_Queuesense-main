@@ -1,0 +1,12 @@
+{
+  "name": "queuesense-iot-backend",
+  "version": "0.1.0",
+  "description": "Minimal real backend for the QueueSense ESP32 OP desk node (heartbeat, IR entry/exit events, button events, queue read, device registry).",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2"
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "trained_at": "2026-11-08T21:11:07.331559",
+  "n_rows": 5081,
+  "test_mae_minutes": 2.04,
+  "test_rmse_minutes": 2.39,
+  "naive_baseline_mae_minutes": 2.92,
+  "features": [
+    "hour",
+    "day_of_week",
+    "queue_size_at_start",
+    "is_emergency",
+    "is_peak_hour",
+    "experience_years",
+    "consultation_minutes",
+    "queue_load",
+    "emergency_factor",
+    "recent_avg_wait",
+    "doctor_id"
+  ],
+  "model": "GradientBoostingRegressor(n_estimators=150, max_depth=3, lr=0.08)"
+}
