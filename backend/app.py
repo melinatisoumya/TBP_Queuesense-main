@@ -11,7 +11,7 @@ from datetime import datetime
 
 import joblib
 import pandas as pd
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 
 app = Flask(__name__)
 
@@ -125,7 +125,19 @@ def predict_wait():
         "predicted_wait_minutes": predicted_wait,
         "method": method,
     })
+# Serve React Frontend (Add this near the bottom of your app.py)
+@app.route("/", defaults={"path": ""})
+@app.route("/<path:path>")
+def serve_frontend(path):
+    # Keep your API routes active (ensure your actual prefixes like 'api/', 'predict', etc. are covered)
+    if path.startswith("api/") or path.startswith("predict") or path.startswith("health") or path.startswith("model"):
+        return jsonify({"error": "Not found"}), 404
 
+    static_folder_path = os.path.join(app.root_path, "static")
+    if path != "" and os.path.exists(os.path.join(static_folder_path, path)):
+        return send_from_directory(static_folder_path, path)
+    else:
+        return send_from_directory(static_folder_path, "index.html")
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5001)
