@@ -33,7 +33,7 @@
 /* ===================== USER CONFIG ===================== */
 const char* WIFI_SSID       = "YOUR_WIFI_NAME";
 const char* WIFI_PASSWORD   = "YOUR_WIFI_PASSWORD";
-const char* BACKEND_HOST    = "your-backend.onrender.com"; // no scheme, no trailing slash (LAN example: "192.168.1.20:3001")
+const char* BACKEND_HOST    = "your-backend.onrender.com"; // TODO: Replace with your live Render URL (no https://, no trailing slash)
 const bool  BACKEND_USE_TLS = true;                        // true = https, false = http (use false for a LAN backend)
 const char* DEVICE_ID       = "ESP32_OPDESK_01";
 const char* DEVICE_LOCATION = "OP Registration Desk";
@@ -75,8 +75,6 @@ const int ALL_LEDS[10] = {
 #define HEARTBEAT_MS        15000
 
 /* ===================== IR SENSOR LOGIC ===================== */
-// Most cheap 3-pin IR obstacle modules pull OUT LOW when the beam is broken.
-// Flip this if your specific module is active-HIGH.
 #define IR_ACTIVE_LOW true
 
 struct IrSensor {
@@ -102,46 +100,43 @@ unsigned long lastDeskPollAt = 0;
 unsigned long lastWifiRetryAt = 0;
 unsigned long lastDrawAt = 0;
 
-// what the web app (OP desk) says about this doctor's queue — shown on the OLED
 struct DeskState {
   bool available;
   bool stale;
   String doctorName;
-  int waiting;        // patients waiting (not counting the one inside)
-  int callingToken;   // token being called right now, -1 = none
-  int nextToken;      // next in line after the one being called, -1 = none
-  int inRoomToken;    // token currently inside the room, -1 = none
-  int estMin;         // estimated wait for the last patient in the queue
+  int waiting;
+  int callingToken;
+  int nextToken;
+  int inRoomToken;
+  int estMin;
   bool onBreak;
   int delayMin;
-  int emergency;      // emergency cases waiting
+  int emergency;
 };
 DeskState desk = { false, true, "", -1, -1, -1, -1, -1, false, 0, 0 };
-long lastSeenCallSeq = -1;   // buzzer sounds when this changes
+long lastSeenCallSeq = -1;
 
-bool displayShowsDeviceInfo = false; // Button 2 toggles this
+bool displayShowsDeviceInfo = false;
 unsigned long btn2PressStart = 0;
 bool btn2Held = false;
 
-String lastGestureText = "";          // short on-screen confirmation of the last door/button event
+String lastGestureText = "";
 unsigned long lastGestureAt = 0;
 
 Adafruit_SSD1306 display(128, 64, &Wire, -1);
 
 /* ===================== EVENT BUFFER (offline-safe) ===================== */
-// Every door / button event is queued here first and sent to the backend; if the network is
-// down it stays queued and is retried, so no patient movement is lost.
 struct PendingEvent {
   bool used;
   String sensorId;
-  String action; // "ENTRY" | "EXIT" | "NEXT" | "PREVIOUS" | "BREAK"
+  String action;
   unsigned long seq;
   unsigned long queuedAt;
 };
 #define BUFFER_SIZE 20
 PendingEvent eventBuffer[BUFFER_SIZE];
 unsigned long eventSeqCounter = 0;
-unsigned long bootId = 0;          // random per boot so the backend never mistakes a new boot's seq numbers for duplicates
+unsigned long bootId = 0;
 unsigned long lastFlushAttemptAt = 0;
 bool lastFlushFailed = false;
 
@@ -152,7 +147,6 @@ void queueEvent(String sensorId, String action) {
       return;
     }
   }
-  // buffer full: drop the oldest to make room rather than blocking forever
   int oldestIdx = 0;
   unsigned long oldestTime = ULONG_MAX;
   for (int i = 0; i < BUFFER_SIZE; i++) {
@@ -162,7 +156,7 @@ void queueEvent(String sensorId, String action) {
   Serial.println("[WARN] Event buffer full, dropped oldest pending event");
 }
 
-/* ===================== BUZZER (non-blocking, OP desk) ===================== */
+/* ===================== BUZZER ===================== */
 int buzzBeepsLeft = 0;
 bool buzzIsOn = false;
 unsigned long buzzChangeAt = 0;
@@ -196,7 +190,7 @@ void updateBuzzer() {
   }
 }
 
-/* ===================== LED PULSE (for heartbeat / service-completed) ===================== */
+/* ===================== LED PULSE ===================== */
 bool heartbeatPulseOn = false;
 unsigned long heartbeatPulseAt = 0;
 bool serviceDonePulseOn = false;
@@ -216,9 +210,9 @@ void updateStatusLeds() {
   digitalWrite(LED_QUEUE_ACTIVE, waiting > 0 ? HIGH : LOW);
   digitalWrite(LED_QUEUE_LOW, waiting > 0 && waiting <= 3 ? HIGH : LOW);
   digitalWrite(LED_QUEUE_HIGH, waiting >= 8 ? HIGH : LOW);
-  digitalWrite(LED_SERVICE_ACTIVE, desk.inRoomToken > 0 ? HIGH : LOW);   // patient is inside the doctor's room
-  digitalWrite(LED_EMERGENCY, desk.emergency > 0 ? HIGH : LOW);          // an emergency case is waiting
-  digitalWrite(LED_ALERT, (!backendReachable || desk.onBreak) ? HIGH : LOW); // no backend, or doctor on break
+  digitalWrite(LED_SERVICE_ACTIVE, desk.inRoomToken > 0 ? HIGH : LOW);
+  digitalWrite(LED_EMERGENCY, desk.emergency > 0 ? HIGH : LOW);
+  digitalWrite(LED_ALERT, (!backendReachable || desk.onBreak) ? HIGH : LOW);
 }
 
 /* ===================== WIFI ===================== */
@@ -228,7 +222,7 @@ void connectWifi() {
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   unsigned long start = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - start < 15000) {
-    delay(250); // acceptable here: one-time startup only, not in loop()
+    delay(250);
     Serial.print(".");
   }
   wifiOnline = (WiFi.status() == WL_CONNECTED);
@@ -246,7 +240,7 @@ void ensureWifi() {
   }
 }
 
-/* ===================== HTTP HELPERS ===================== */
+/* ===================== HTTP HELPERS (Updated for Render Timeout) ===================== */
 String backendUrl(String path) {
   String scheme = BACKEND_USE_TLS ? "https://" : "http://";
   return scheme + BACKEND_HOST + path;
@@ -261,7 +255,7 @@ bool httpPostJson(String path, const JsonDocument& body, JsonDocument& responseO
   bool began;
 
   if (BACKEND_USE_TLS) {
-    secureClient.setInsecure(); // prototype only — see HARDWARE_SETUP.md security note
+    secureClient.setInsecure();
     began = http.begin(secureClient, backendUrl(path));
   } else {
     began = http.begin(plainClient, backendUrl(path));
@@ -269,7 +263,7 @@ bool httpPostJson(String path, const JsonDocument& body, JsonDocument& responseO
   if (!began) return false;
 
   http.addHeader("Content-Type", "application/json");
-  http.setTimeout(3000);
+  http.setTimeout(15000); // Increased to 15s to handle Render free tier spin-down cold starts
 
   String payload;
   serializeJson(body, payload);
@@ -302,7 +296,7 @@ bool httpGetJson(String path, JsonDocument& responseOut) {
   }
   if (!began) return false;
 
-  http.setTimeout(3000);
+  http.setTimeout(15000); // Increased to 15s to handle Render free tier spin-down cold starts
   int code = http.GET();
   bool ok = (code >= 200 && code < 300);
   if (ok) {
@@ -331,7 +325,6 @@ void sendHeartbeat() {
   pulseHeartbeatLed();
 }
 
-// Sends a button event (Button 2 RESET) to the legacy button endpoint.
 void sendButtonEvent(String buttonId, String action) {
   StaticJsonDocument<256> body;
   body["device_id"] = DEVICE_ID;
@@ -344,10 +337,9 @@ void sendButtonEvent(String buttonId, String action) {
   backendReachable = httpPostJson("/api/iot/button", body, resp) || backendReachable;
 }
 
-// Sends queued door-IR / room-button events (oldest first). Stops at the first failure and retries later.
 void flushEventBuffer() {
   if (!wifiOnline) return;
-  if (lastFlushFailed && millis() - lastFlushAttemptAt < 3000) return; // back off after a failure
+  if (lastFlushFailed && millis() - lastFlushAttemptAt < 3000) return;
 
   for (int i = 0; i < BUFFER_SIZE; i++) {
     if (!eventBuffer[i].used) continue;
@@ -357,7 +349,7 @@ void flushEventBuffer() {
     body["doctor_id"] = DOCTOR_ID;
     body["sensor_id"] = eventBuffer[i].sensorId;
     body["action"] = eventBuffer[i].action;
-    body["seq"] = eventBuffer[i].seq;      // lets the backend drop duplicate retries
+    body["seq"] = eventBuffer[i].seq;
     body["boot_id"] = bootId;
     body["timestamp"] = eventBuffer[i].queuedAt;
 
@@ -370,12 +362,11 @@ void flushEventBuffer() {
       backendReachable = true;
     } else {
       lastFlushFailed = true;
-      break; // still offline, stop trying the rest this round
+      break;
     }
   }
 }
 
-// Reads the live queue summary the web app publishes for this doctor; drives the OLED and the buzzer.
 void refreshFromBackend() {
   StaticJsonDocument<512> resp;
   bool ok = httpGetJson("/api/iot/desk-state?doctor_id=" + String(DOCTOR_ID), resp);
@@ -397,8 +388,6 @@ void refreshFromBackend() {
   desk.delayMin = resp["delay_min"] | 0;
   desk.emergency = resp["emergency"] | 0;
 
-  // OP-desk buzzer: sounds each time a patient is called (call_seq goes up).
-  // The very first poll after boot only records the value, so a reboot never buzzes by itself.
   long seq = resp["call_seq"] | -1;
   if (seq >= 0) {
     if (lastSeenCallSeq >= 0 && seq > lastSeenCallSeq) buzzBeeps(3, 160, 120);
@@ -406,7 +395,7 @@ void refreshFromBackend() {
   }
 }
 
-/* ===================== OLED (OP desk) ===================== */
+/* ===================== OLED ===================== */
 String clip(String s, int maxChars) {
   return s.length() > (unsigned)maxChars ? s.substring(0, maxChars) : s;
 }
@@ -428,7 +417,6 @@ void drawQueueScreen() {
   }
   display.drawLine(0, 10, 128, 10, SSD1306_WHITE);
 
-  // main line, big
   display.setTextSize(2);
   display.setCursor(0, 15);
   if (!backendReachable || !desk.available) {
@@ -445,7 +433,6 @@ void drawQueueScreen() {
     display.println("NO QUEUE");
   }
 
-  // details
   display.setTextSize(1);
   display.setCursor(0, 36);
   if (backendReachable && desk.available) {
@@ -456,7 +443,6 @@ void drawQueueScreen() {
     display.print("Est wait: "); display.print(desk.estMin >= 0 ? desk.estMin : 0); display.println(" min");
   }
 
-  // bottom line: last door/button event for 2 s, otherwise status
   display.setCursor(0, 56);
   if (millis() - lastGestureAt < 2000 && lastGestureText.length() > 0) {
     display.print("> "); display.print(lastGestureText);
@@ -489,27 +475,24 @@ void drawDeviceInfoScreen() {
 }
 
 void updateDisplay() {
-  if (millis() - lastDrawAt < 200) return; // redrawing every loop would starve the sensors
+  if (millis() - lastDrawAt < 200) return;
   lastDrawAt = millis();
   if (displayShowsDeviceInfo) drawDeviceInfoScreen();
   else drawQueueScreen();
 }
 
-/* ===================== DOCTOR'S DOOR — IR SENSORS ===================== */
+/* ===================== IR SENSORS ===================== */
 void pollIrSensor(IrSensor &s, bool isEntry) {
   bool raw = digitalRead(s.pin);
   if (raw != s.rawState) {
     s.rawState = raw;
     s.lastChangeAt = millis();
   }
-  // require the reading to be stable for DEBOUNCE_MS before trusting it
   if (millis() - s.lastChangeAt >= DEBOUNCE_MS && s.stableState != s.rawState) {
     bool wasBroken = isBeamBroken(s.stableState);
     s.stableState = s.rawState;
     bool nowBroken = isBeamBroken(s.stableState);
 
-    // count only the transition into "broken" (person detected), and only
-    // if enough time has passed since the last counted crossing
     if (!wasBroken && nowBroken && millis() - s.lastEventAt > MIN_EVENT_GAP_MS) {
       s.lastEventAt = millis();
       if (isEntry) {
@@ -526,7 +509,7 @@ void pollIrSensor(IrSensor &s, bool isEntry) {
   }
 }
 
-/* ===================== DOCTOR-ROOM BUTTON (short / double / long) ===================== */
+/* ===================== DOCTOR-ROOM BUTTON ===================== */
 bool docBtnRaw = HIGH, docBtnStable = HIGH, docBtnDown = false, docBtnLongFired = false;
 unsigned long docBtnRawAt = 0, docBtnDownAt = 0, docLastReleaseAt = 0;
 int docClicks = 0;
@@ -546,15 +529,15 @@ void pollDoctorButton() {
 
   if (now - docBtnRawAt >= DEBOUNCE_MS && docBtnStable != docBtnRaw) {
     docBtnStable = docBtnRaw;
-    if (docBtnStable == LOW) {                       // pressed (active low via INPUT_PULLUP)
+    if (docBtnStable == LOW) {
       docBtnDown = true;
       docBtnDownAt = now;
       docBtnLongFired = false;
-    } else {                                         // released
+    } else {
       if (docBtnDown && !docBtnLongFired) {
         docClicks++;
         docLastReleaseAt = now;
-        if (docClicks >= 2) {                        // two short presses -> PREVIOUS patient
+        if (docClicks >= 2) {
           docClicks = 0;
           doctorGesture("PREVIOUS", "Previous patient");
         }
@@ -563,21 +546,19 @@ void pollDoctorButton() {
     }
   }
 
-  // long press fires while the button is still held, so the doctor gets instant feedback
   if (docBtnDown && !docBtnLongFired && now - docBtnDownAt >= LONG_PRESS_MS) {
     docBtnLongFired = true;
     docClicks = 0;
     doctorGesture("BREAK", "Break on/off");
   }
 
-  // a single short press is confirmed only after the double-press window has passed
   if (docClicks == 1 && !docBtnDown && now - docLastReleaseAt > DOUBLE_GAP_MS) {
     docClicks = 0;
     doctorGesture("NEXT", "Next patient");
   }
 }
 
-/* ===================== BUTTON 2 (OLED page / RESET) ===================== */
+/* ===================== BUTTON 2 ===================== */
 bool btn2Last = HIGH;
 unsigned long btn2DebounceAt = 0;
 
@@ -621,7 +602,7 @@ void setup() {
 
   Wire.begin(PIN_OLED_SDA, PIN_OLED_SCL);
   if (!display.begin(SSD1306_SWITCHCAPVCC, 0x3C)) {
-    Serial.println("[OLED] init failed - check wiring/address (0x3C or 0x3D)");
+    Serial.println("[OLED] init failed");
   }
   display.clearDisplay();
   display.display();
@@ -655,6 +636,4 @@ void loop() {
   }
 
   updateDisplay();
-
-  // no delay() here on purpose — keeps sensor polling and networking responsive
 }
